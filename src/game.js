@@ -1,4 +1,4 @@
-// Dobby Runner - Chrome Dino Style Game (7 Obstacles, Speed Optimized + Run Animation + Random Distance)
+// Dobby Runner - Chrome Dino Style Game (Updated Collision: Stop at Hit, No Reposition)
 
 let dobby;
 let cursors;
@@ -46,17 +46,16 @@ function preload() {
   this.load.audio("hit", "./assets/hit.wav");
 }
 
+// Vẽ nền kẻ sọc ngẫu nhiên (kiểu đất cát thô sơ)
 function createGroundPattern(scene) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
   const w = 200;
   const h = 8;
 
-  g.fillStyle(0xffffff, 0); // nền trong suốt
-
-  for (let i = 0; i < w; i += Phaser.Math.Between(12, 25)) {
-    const dashLength = Phaser.Math.Between(8, 18);
+  for (let i = 0; i < w; i += Phaser.Math.Between(10, 25)) {
+    const dashLength = Phaser.Math.Between(6, 15);
     const yOffset = Phaser.Math.Between(0, 4);
-    g.fillStyle(0xbcbcbc, 1);
+    g.fillStyle(0x9e9e9e, 1);
     g.fillRect(i, yOffset, dashLength, 2);
   }
 
@@ -221,7 +220,7 @@ function startObstacleSpawning() {
     callback: () => {
       spawnObstacle.call(this);
 
-      // reset timer với delay mới
+      // reset timer với delay mới (random)
       obstacleTimer.reset({
         delay: Phaser.Math.Between(800, 2200),
         callback: () => spawnObstacle.call(this),
@@ -262,14 +261,27 @@ function hitObstacle(player, obstacle) {
   if (!gameOver) {
     gameOver = true;
     hitSound.play();
-    dobby.setVelocityX(0);
-    obstacles.getChildren().forEach((obs) => obs.setVelocityX(0));
+
+    // Dừng player ngay vị trí va
+    player.anims.stop();
+    player.setTexture("dobby_run1");
+    player.setVelocity(0, 0);
+    player.body.allowGravity = false;
+
+    // Dừng obstacle
+    obstacles.getChildren().forEach((obs) => {
+      obs.setVelocityX(0);
+      if (obs.body) obs.body.allowGravity = false;
+    });
     if (obstacleTimer) obstacleTimer.destroy();
+
+    // High score
     if (score > highScore) {
       highScore = score;
       localStorage.setItem("dobbyHighScore", highScore);
       highScoreText.setText(`High Score: ${highScore}`);
     }
+
     gameOverText.visible = true;
     restartText.visible = true;
     this.cameras.main.flash(200, 255, 0, 0, false);
@@ -287,6 +299,7 @@ function restartGame() {
   obstacles.clear(true, true);
   dobby.setPosition(100, groundY - dobby.displayHeight / 2);
   dobby.setVelocity(0, 0);
+  dobby.body.allowGravity = true;
   dobby.play("run");
   startObstacleSpawning.call(this);
 }
