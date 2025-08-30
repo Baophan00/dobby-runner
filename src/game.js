@@ -1,4 +1,4 @@
-// Dobby Runner - Chrome Dino Style Game (6 Obstacles, Speed Optimized)
+// Dobby Runner - Chrome Dino Style Game (7 Obstacles, Speed Optimized + Run Animation + Random Distance)
 
 let dobby;
 let cursors;
@@ -6,7 +6,7 @@ let obstacles;
 let groundY;
 let score = 0;
 let scoreText;
-let gameSpeed = 380; // Slightly faster base speed
+let gameSpeed = 600;
 let jumpSound, hitSound;
 let gameOver = false;
 let gameOverText;
@@ -16,8 +16,9 @@ let highScoreText;
 let spaceKey;
 let obstacleTimer;
 let isJumping = false;
+let groundSprite;
 
-// 6 vật cản
+// Danh sách obstacle
 const obstacleKeys = [
   "obstacle1",
   "obstacle2",
@@ -28,9 +29,11 @@ const obstacleKeys = [
 ];
 
 function preload() {
-  this.load.image("dobby", "./assets/dobby.png");
+  // Load nhân vật (2 frame chạy)
+  this.load.image("dobby_run1", "./assets/dobby_run1.png");
+  this.load.image("dobby_run2", "./assets/dobby_run2.png");
 
-  // Load tất cả 6 vật cản
+  // Load obstacles
   this.load.image("obstacle1", "./assets/obstacle1.png");
   this.load.image("obstacle2", "./assets/obstacle2.png");
   this.load.image("obstacle3", "./assets/obstacle3.png");
@@ -38,33 +41,73 @@ function preload() {
   this.load.image("obstacle5", "./assets/obstacle5.png");
   this.load.image("obstacle6", "./assets/obstacle6.png");
 
+  // Âm thanh
   this.load.audio("jump", "./assets/jump.wav");
   this.load.audio("hit", "./assets/hit.wav");
+}
+
+function createGroundPattern(scene) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const w = 200;
+  const h = 8;
+
+  g.fillStyle(0xffffff, 0); // nền trong suốt
+
+  for (let i = 0; i < w; i += Phaser.Math.Between(12, 25)) {
+    const dashLength = Phaser.Math.Between(8, 18);
+    const yOffset = Phaser.Math.Between(0, 4);
+    g.fillStyle(0xbcbcbc, 1);
+    g.fillRect(i, yOffset, dashLength, 2);
+  }
+
+  g.generateTexture("groundPattern", w, h);
+  g.destroy();
+
+  const ground = scene.add.tileSprite(
+    scene.scale.width / 2,
+    groundY,
+    scene.scale.width,
+    h,
+    "groundPattern"
+  );
+  scene.physics.add.existing(ground, true);
+  return ground;
 }
 
 function create() {
   gameOver = false;
   score = 0;
-  gameSpeed = 380; // Slightly faster starting speed
+  gameSpeed = 600;
   groundY = 280;
 
   this.cameras.main.setBackgroundColor("#f7f7f7");
 
-  dobby = this.physics.add.sprite(100, groundY, "dobby");
-  dobby.setCollideWorldBounds(true);
+  // Nền đất
+  groundSprite = createGroundPattern(this);
 
-  // Set size nhân vật (chiều rộng 100, chiều cao 120)
-  dobby.setDisplaySize(100, 120);
-  // Đặt lại vị trí chính xác trên mặt đất
+  // Nhân vật
+  dobby = this.physics.add.sprite(100, groundY - 60, "dobby_run1");
+  dobby.setCollideWorldBounds(true);
+  dobby.setDisplaySize(100, 120); // rộng 100, cao 120
   dobby.setY(groundY - dobby.displayHeight / 2);
-  // Hitbox nhỏ hơn để dễ chơi
   dobby.body.setSize(dobby.width * 0.7, dobby.height * 0.7);
 
+  // Animation chạy
+  this.anims.create({
+    key: "run",
+    frames: [{ key: "dobby_run1" }, { key: "dobby_run2" }],
+    frameRate: 10,
+    repeat: -1,
+  });
+  dobby.play("run");
+
+  // Nhóm obstacle
   obstacles = this.physics.add.group();
 
   jumpSound = this.sound.add("jump", { volume: 0.3 });
   hitSound = this.sound.add("hit", { volume: 0.5 });
 
+  // Text
   scoreText = this.add.text(16, 16, "Score: 0", {
     fontSize: "24px",
     fill: "#535353",
@@ -95,28 +138,25 @@ function create() {
     .text(
       this.scale.width / 2,
       this.scale.height / 2,
-      "Press SPACE or TAP to restart",
+      "Press SPACE / TAP to restart",
       { fontSize: "16px", fill: "#757575", fontFamily: "monospace" }
     )
     .setOrigin(0.5);
   restartText.visible = false;
 
+  // Input
   cursors = this.input.keyboard.createCursorKeys();
   spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-  // Support mobile: tap để nhảy
+  // Nhảy bằng tap màn hình
   this.input.on("pointerdown", () => {
-    if (!gameOver && (dobby.body.touching.down || dobby.body.onFloor())) {
-      dobby.setVelocityY(-450);
-      jumpSound.play();
-      isJumping = true;
-    } else if (gameOver) {
-      restartGame.call(this);
-    }
+    if (!gameOver) tryJump();
+    else restartGame.call(this);
   });
 
   startObstacleSpawning.call(this);
 
+  // Va chạm đất
   const ground = this.physics.add.staticGroup();
   const groundRect = this.add
     .rectangle(this.scale.width / 2, groundY, this.scale.width, 20, 0x555555)
@@ -130,19 +170,25 @@ function create() {
 function update() {
   if (!gameOver) {
     if (
-      (Phaser.Input.Keyboard.JustDown(spaceKey) ||
-        Phaser.Input.Keyboard.JustDown(cursors.up)) &&
-      (dobby.body.touching.down || dobby.body.onFloor())
+      Phaser.Input.Keyboard.JustDown(spaceKey) ||
+      Phaser.Input.Keyboard.JustDown(cursors.up)
     ) {
-      dobby.setVelocityY(-450);
-      jumpSound.play();
-      isJumping = true;
+      tryJump();
     }
 
     if ((dobby.body.touching.down || dobby.body.onFloor()) && isJumping) {
       isJumping = false;
     }
 
+    // Animation chạy hoặc nhảy
+    if (dobby.body.touching.down || dobby.body.onFloor()) {
+      if (!dobby.anims.isPlaying) dobby.play("run", true);
+    } else {
+      dobby.anims.stop();
+      dobby.setTexture("dobby_run1");
+    }
+
+    // Xóa obstacle ra ngoài màn
     obstacles.getChildren().forEach((obstacle) => {
       if (obstacle.x < -50) {
         obstacle.destroy();
@@ -151,6 +197,9 @@ function update() {
     });
 
     increaseDifficulty();
+
+    // Ground scroll
+    groundSprite.tilePositionX += gameSpeed / 60;
   } else {
     if (Phaser.Input.Keyboard.JustDown(spaceKey)) {
       restartGame.call(this);
@@ -158,10 +207,28 @@ function update() {
   }
 }
 
+function tryJump() {
+  if (dobby.body.touching.down || dobby.body.onFloor()) {
+    dobby.setVelocityY(-520);
+    jumpSound.play();
+    isJumping = true;
+  }
+}
+
 function startObstacleSpawning() {
   obstacleTimer = this.time.addEvent({
-    delay: Phaser.Math.Between(1200, 2200), // random khoảng cách
-    callback: spawnObstacle,
+    delay: Phaser.Math.Between(800, 2000),
+    callback: () => {
+      spawnObstacle.call(this);
+
+      // reset timer với delay mới
+      obstacleTimer.reset({
+        delay: Phaser.Math.Between(800, 2200),
+        callback: () => spawnObstacle.call(this),
+        callbackScope: this,
+        loop: true,
+      });
+    },
     callbackScope: this,
     loop: true,
   });
@@ -171,8 +238,10 @@ function spawnObstacle() {
   if (!gameOver) {
     const key = obstacleKeys[Phaser.Math.Between(0, obstacleKeys.length - 1)];
     const obstacle = obstacles.create(this.scale.width + 20, groundY - 30, key);
-    obstacle.setDisplaySize(60, 60);
-    obstacle.body.setSize(obstacle.width * 0.8, obstacle.height * 0.8);
+
+    const size = Phaser.Math.Between(50, 70);
+    obstacle.setDisplaySize(size, size);
+    obstacle.body.setSize(obstacle.width * 0.9, obstacle.height * 0.9);
     obstacle.body.setImmovable(true);
     obstacle.body.allowGravity = false;
     obstacle.setVelocityX(-gameSpeed);
@@ -182,11 +251,11 @@ function spawnObstacle() {
 function increaseScore() {
   score += 1;
   scoreText.setText("Score: " + score);
-  if (score % 10 === 0) gameSpeed += 18;
+  if (score % 10 === 0) gameSpeed += 20;
 }
 
 function increaseDifficulty() {
-  gameSpeed += 0.04;
+  gameSpeed += 0.05;
 }
 
 function hitObstacle(player, obstacle) {
@@ -210,7 +279,7 @@ function hitObstacle(player, obstacle) {
 function restartGame() {
   gameOver = false;
   score = 0;
-  gameSpeed = 380;
+  gameSpeed = 600;
   isJumping = false;
   gameOverText.visible = false;
   restartText.visible = false;
@@ -218,7 +287,7 @@ function restartGame() {
   obstacles.clear(true, true);
   dobby.setPosition(100, groundY - dobby.displayHeight / 2);
   dobby.setVelocity(0, 0);
-  dobby.setDisplaySize(100, 120);
+  dobby.play("run");
   startObstacleSpawning.call(this);
 }
 
@@ -229,7 +298,10 @@ const config = {
   render: { pixelArt: false, antialias: true },
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   backgroundColor: "#f7f7f7",
-  physics: { default: "arcade", arcade: { gravity: { y: 800 }, debug: false } },
+  physics: {
+    default: "arcade",
+    arcade: { gravity: { y: 1200 }, debug: false },
+  },
   scene: { preload, create, update },
 };
 
