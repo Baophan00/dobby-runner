@@ -4,10 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dobby Runner</title>
+  <style>
+    /* Đảm bảo game chiếm toàn màn hình trình duyệt */
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f7f7f7;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+    }
+  </style>
 </head>
 <body>
-  <!-- Dobby Runner Game -->
-  <script src="./node_modules/phaser/dist/phaser.js"></script>
-  <script src="./src/game.js"></script>
+  <!-- Load Phaser từ CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.js"></script>
+
+  <!-- Load game.js -->
+  <script type="module" src="./src/game.js"></script>
 </body>
 </html>
